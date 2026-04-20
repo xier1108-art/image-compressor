@@ -40,26 +40,39 @@ except ImportError:
 
 PROFILES = {
     "extreme": {
-        "jpeg_quality":    40,    # aggressive but still recognisable
+        # ── General ──────────────────────────────────────────────
+        "jpeg_quality":    40,
         "webp_quality":    35,
-        "webp_method":     6,     # slowest / best WebP encoder
+        "webp_method":     6,
         "png_compress":    9,
         "png_quantize":    True,
-        "png_colors":      128,   # extreme: 128-colour palette
-        "subsampling":     2,     # 4:2:0 chroma (smaller, barely visible)
+        "png_colors":      128,
+        "subsampling":     2,
         "strip_exif":      True,
         "oxipng_level":    6,
+        # ── HEIC/HEIF special handling ────────────────────────────
+        # HEIC uses HEVC (2× more efficient than JPEG). Re-encoding as
+        # JPEG at the same visual quality barely saves space. Apply an
+        # auto resize + lower quality so the output is meaningfully
+        # smaller without user having to toggle the resize checkbox.
+        "heic_max_dim":        1920,   # resize any HEIC down to max 1920px
+        "heic_jpeg_quality":   40,
+        "heic_webp_quality":   35,
     },
     "recommended": {
         "jpeg_quality":    68,
         "webp_quality":    72,
         "webp_method":     6,
         "png_compress":    9,
-        "png_quantize":    True,  # ← now ON (non-alpha only)
+        "png_quantize":    True,
         "png_colors":      256,
         "subsampling":     2,
-        "strip_exif":      True,  # strip EXIF — big win on phone photos
+        "strip_exif":      True,
         "oxipng_level":    4,
+        # HEIC: resize to 2560px + lower JPEG quality
+        "heic_max_dim":        2560,
+        "heic_jpeg_quality":   58,
+        "heic_webp_quality":   65,
     },
     "low": {
         "jpeg_quality":    82,
@@ -68,9 +81,13 @@ PROFILES = {
         "png_compress":    6,
         "png_quantize":    False,
         "png_colors":      256,
-        "subsampling":     0,     # 4:4:4 chroma (better quality)
-        "strip_exif":      False, # keep EXIF in low-compression mode
+        "subsampling":     0,
+        "strip_exif":      False,
         "oxipng_level":    2,
+        # HEIC low: no forced resize (화질 우선), but slightly lower quality
+        "heic_max_dim":        None,
+        "heic_jpeg_quality":   72,
+        "heic_webp_quality":   78,
     },
 }
 
@@ -119,6 +136,23 @@ def compress_image(
     else:
         # "original" — BMP and HEIC always convert to JPEG (no meaningful re-save otherwise)
         target_fmt = "jpeg" if src_fmt in ("bmp", "heic") else src_fmt
+
+    # ── HEIC-specific profile override ───────────────────────────────────
+    # HEIC/HEIF is already encoded with HEVC (≈2× more efficient than JPEG).
+    # Re-encoding as JPEG at the general quality setting barely reduces size.
+    # Apply dedicated lower quality + auto-resize for HEIC sources.
+    if src_fmt == "heic":
+        profile = dict(profile)  # shallow copy — don't mutate the global
+        heic_max = profile.get("heic_max_dim")
+        if target_fmt == "jpeg":
+            profile["jpeg_quality"] = profile.get("heic_jpeg_quality",
+                                                   profile["jpeg_quality"])
+        elif target_fmt == "webp":
+            profile["webp_quality"] = profile.get("heic_webp_quality",
+                                                   profile["webp_quality"])
+        # Auto-resize: only if user hasn't already set a tighter limit
+        if heic_max and (not max_dim or max_dim > heic_max):
+            max_dim = heic_max
 
     # ── Load ──────────────────────────────────────────────────────────────
     img, exif_bytes = _load_image(input_path)
