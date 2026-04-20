@@ -10,6 +10,8 @@ datas += collect_data_files('tkinterdnd2')
 binaries += collect_dynamic_libs('tkinterdnd2')
 tmp_ret = collect_all('pillow_heif')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('oxipng')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
