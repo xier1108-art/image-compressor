@@ -1,7 +1,7 @@
 """
 Image compression engine.
 
-Supports: JPEG, PNG, WebP, BMP, TIFF
+Supports: JPEG, PNG, WebP, BMP, TIFF, HEIC/HEIF
 Output formats: original, jpeg, webp
 """
 
@@ -9,6 +9,14 @@ import os
 import shutil
 
 from PIL import Image, ImageOps
+
+# Register HEIC/HEIF opener (pillow-heif)
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    _HEIF_SUPPORT = True
+except ImportError:
+    _HEIF_SUPPORT = False
 
 # ---------------------------------------------------------------------------
 # Compression profiles
@@ -50,6 +58,8 @@ _FMT_MAP = {
     ".webp": "webp",
     ".tiff": "tiff",
     ".tif":  "tiff",
+    ".heic": "heic",
+    ".heif": "heic",
 }
 
 
@@ -83,8 +93,8 @@ def compress_image(
     elif output_format == "jpeg":
         target_fmt = "jpeg"
     else:
-        # "original" — keep source format, but BMP always converts to jpeg
-        target_fmt = "jpeg" if src_fmt == "bmp" else src_fmt
+        # "original" — keep source format, but BMP/HEIC always converts to jpeg
+        target_fmt = "jpeg" if src_fmt in ("bmp", "heic") else src_fmt
 
     # Load image
     img, exif_bytes = _load_image(input_path)

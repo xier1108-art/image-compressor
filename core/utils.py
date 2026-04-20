@@ -1,6 +1,6 @@
 import os
 
-SUPPORTED_EXTENSIONS = (".png", ".bmp", ".jpg", ".jpeg", ".webp", ".tiff", ".tif")
+SUPPORTED_EXTENSIONS = (".png", ".bmp", ".jpg", ".jpeg", ".webp", ".tiff", ".tif", ".heic", ".heif")
 
 
 def format_size(bytes_val: int) -> str:
