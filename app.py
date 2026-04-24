@@ -1,28 +1,22 @@
 """
-사진 압축기 – entry point.
+사진 압축기 – entry point (PyQt6).
 
 Run:
     python app.py
-
-Or double-click run.bat
 """
 
 import sys
 
 
 def main():
-    has_dnd = False
-    try:
-        from tkinterdnd2 import TkinterDnD
-        root = TkinterDnD.Tk()
-        has_dnd = True
-    except Exception:
-        import tkinter as tk
-        root = tk.Tk()
-
+    from PyQt6.QtWidgets import QApplication
     from ui.main_window import MainWindow
-    MainWindow(root, has_dnd=has_dnd)
-    root.mainloop()
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("사진 압축기")
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

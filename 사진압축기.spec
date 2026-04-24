@@ -1,17 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
-from PyInstaller.utils.hooks import collect_dynamic_libs
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
-hiddenimports = ['PIL._tkinter_finder', 'PIL._imagingtk', 'PIL.JpegImagePlugin', 'PIL.PngImagePlugin', 'PIL.WebPImagePlugin', 'PIL.TiffImagePlugin', 'PIL.BmpImagePlugin']
-datas += collect_data_files('tkinterdnd2')
-binaries += collect_dynamic_libs('tkinterdnd2')
-tmp_ret = collect_all('pillow_heif')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('oxipng')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = [
+    'PIL.JpegImagePlugin',
+    'PIL.PngImagePlugin',
+    'PIL.WebPImagePlugin',
+    'PIL.TiffImagePlugin',
+    'PIL.BmpImagePlugin',
+]
+
+for pkg in ('PyQt6', 'pillow_heif', 'oxipng'):
+    tmp = collect_all(pkg)
+    datas += tmp[0]; binaries += tmp[1]; hiddenimports += tmp[2]
 
 
 a = Analysis(
@@ -23,7 +25,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tkinter', 'tkinterdnd2'],
     noarchive=False,
     optimize=0,
 )
@@ -36,6 +38,7 @@ exe = EXE(
     a.datas,
     [],
     name='사진압축기',
+    icon=['icon.ico'],
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -4,14 +4,13 @@ echo  사진 압축기 - 단일 .exe 빌드
 echo ================================================
 echo.
 
-pip install pyinstaller pillow pillow-heif pyoxipng tkinterdnd2 --quiet
+pip install pyinstaller pillow pillow-heif pyoxipng PyQt6 --quiet
 
 pyinstaller --onefile --windowed ^
     --name "사진압축기" ^
-    --collect-data tkinterdnd2 ^
-    --collect-binaries tkinterdnd2 ^
-    --hidden-import PIL._tkinter_finder ^
-    --hidden-import PIL._imagingtk ^
+    --collect-all PyQt6 ^
+    --collect-all pillow_heif ^
+    --collect-all oxipng ^
     --hidden-import PIL.JpegImagePlugin ^
     --hidden-import PIL.PngImagePlugin ^
     --hidden-import PIL.WebPImagePlugin ^
