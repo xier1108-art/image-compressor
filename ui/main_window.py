@@ -18,13 +18,14 @@ from PyQt6.QtGui import (
     QMouseEvent, QPainter, QPainterPath, QPen, QPixmap,
 )
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QFileDialog,
-    QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QProgressBar, QPushButton, QSizePolicy, QStackedLayout,
-    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QDialog,
+    QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QRadioButton,
+    QSizePolicy, QSlider, QStackedLayout, QStackedWidget, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from core.compressor import compress_image
+from core.compressor import PROFILES, compress_image
 from core.utils import SUPPORTED_EXTENSIONS, ensure_dir, format_size, get_output_path
 
 from ui import styles as S
@@ -407,6 +408,250 @@ class QualityCard(QFrame):
             w.style().unpolish(w); w.style().polish(w)
 
 
+# ─── Advanced settings dialog ────────────────────────────────────────────────
+
+class _LabeledSlider(QWidget):
+    """QSlider with a monospace value label on the right."""
+    valueChanged = pyqtSignal(int)
+
+    def __init__(self, minv: int, maxv: int, initial: int, suffix: str = "", parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setObjectName("advSlider")
+        self.slider.setRange(minv, maxv)
+        self.slider.setValue(initial)
+        self.suffix = suffix
+        self.value_lbl = QLabel(f"{initial}{suffix}")
+        self.value_lbl.setObjectName("advSliderValue")
+        self.value_lbl.setMinimumWidth(46)
+        self.value_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.slider.valueChanged.connect(self._on_changed)
+        lay.addWidget(self.slider, 1)
+        lay.addWidget(self.value_lbl)
+
+    def _on_changed(self, v: int):
+        self.value_lbl.setText(f"{v}{self.suffix}")
+        self.valueChanged.emit(v)
+
+    def value(self) -> int:
+        return self.slider.value()
+
+    def setValue(self, v: int):
+        self.slider.setValue(v)
+
+    def setEnabled(self, on: bool):  # type: ignore[override]
+        super().setEnabled(on)
+        self.slider.setEnabled(on)
+        self.value_lbl.setEnabled(on)
+
+
+class AdvancedDialog(QDialog):
+    """Per-run override of the active preset's compression parameters."""
+
+    SUBSAMPLING_LABELS = [
+        (2, "4:2:0 (최대압축)"),
+        (1, "4:2:2 (균형)"),
+        (0, "4:4:4 (무손실)"),
+    ]
+
+    def __init__(self, defaults: dict, current: dict, parent=None):
+        super().__init__(parent)
+        self.setObjectName("advDialog")
+        self.setWindowTitle("고급 압축 옵션")
+        self.setModal(True)
+        self.setMinimumWidth(520)
+        self._defaults = defaults
+        self._build_ui(current)
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+    def _section_header(self, text: str) -> QWidget:
+        row = QHBoxLayout(); row.setSpacing(8); row.setContentsMargins(0, 6, 0, 2)
+        lbl = QLabel(text); lbl.setObjectName("advSectionHead")
+        line = QFrame(); line.setObjectName("advSectionLine"); line.setFixedHeight(1)
+        line.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        row.addWidget(lbl)
+        row.addWidget(line, 1)
+        w = QWidget(); w.setLayout(row)
+        return w
+
+    def _field_row(self, label: str, widget: QWidget, hint: str = "") -> QWidget:
+        row = QHBoxLayout(); row.setSpacing(10); row.setContentsMargins(0, 0, 0, 0)
+        lbl = QLabel(label); lbl.setObjectName("advFieldLabel")
+        lbl.setMinimumWidth(110)
+        row.addWidget(lbl)
+        row.addWidget(widget, 1)
+        if hint:
+            h = QLabel(hint); h.setObjectName("advFieldHint")
+            row.addWidget(h)
+        w = QWidget(); w.setLayout(row)
+        return w
+
+    # ── build ────────────────────────────────────────────────────────────────
+    def _build_ui(self, cur: dict):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 18, 22, 18)
+        root.setSpacing(10)
+
+        title = QLabel("고급 압축 옵션")
+        title.setObjectName("advTitle")
+        sub = QLabel("선택한 압축 수준의 세부 값을 직접 조정합니다. 변경한 항목만 다음 압축에 적용됩니다.")
+        sub.setObjectName("advSubtitle")
+        sub.setWordWrap(True)
+        root.addWidget(title)
+        root.addWidget(sub)
+
+        # ── 리사이즈 ─────────────────────────────────────────────────────────
+        root.addWidget(self._section_header("리사이즈"))
+
+        self.rz_none = QRadioButton("원본 크기 유지"); self.rz_none.setObjectName("advRadio")
+        self.rz_pct  = QRadioButton("비율(%)로 축소"); self.rz_pct.setObjectName("advRadio")
+        rz_group = QButtonGroup(self); rz_group.setExclusive(True)
+        rz_group.addButton(self.rz_none); rz_group.addButton(self.rz_pct)
+
+        init_pct = int(round((cur.get("resize_pct") or 0.50) * 100))
+        init_pct = max(10, min(90, init_pct))
+        self.rz_pct_slider = _LabeledSlider(10, 90, init_pct, "%")
+
+        if cur.get("resize_pct"):
+            self.rz_pct.setChecked(True)
+        else:
+            self.rz_none.setChecked(True)
+
+        rz_pct_row = QHBoxLayout(); rz_pct_row.setContentsMargins(20, 0, 0, 0); rz_pct_row.setSpacing(10)
+        rz_pct_row.addWidget(self.rz_pct_slider, 1)
+        rz_pct_w = QWidget(); rz_pct_w.setLayout(rz_pct_row)
+
+        root.addWidget(self.rz_none)
+        row_pct = QHBoxLayout(); row_pct.setContentsMargins(0, 0, 0, 0); row_pct.setSpacing(8)
+        row_pct.addWidget(self.rz_pct); row_pct.addWidget(self.rz_pct_slider, 1)
+        rpw = QWidget(); rpw.setLayout(row_pct)
+        root.addWidget(rpw)
+
+        def _toggle_pct(_=False):
+            self.rz_pct_slider.setEnabled(self.rz_pct.isChecked())
+        self.rz_pct.toggled.connect(_toggle_pct)
+        self.rz_none.toggled.connect(_toggle_pct)
+        _toggle_pct()
+
+        hint = QLabel("ℹ 메인 창의 \"최대 크기 제한\" 옵션이 켜져 있으면 그것이 우선 적용됩니다.")
+        hint.setObjectName("advFieldHint"); hint.setWordWrap(True)
+        root.addWidget(hint)
+
+        # ── JPEG ─────────────────────────────────────────────────────────────
+        root.addWidget(self._section_header("JPEG"))
+        self.jpeg_q = _LabeledSlider(10, 100, cur.get("jpeg_quality", 68))
+        root.addWidget(self._field_row("품질", self.jpeg_q))
+
+        ss_row = QHBoxLayout(); ss_row.setSpacing(8); ss_row.setContentsMargins(0, 0, 0, 0)
+        ss_lbl = QLabel("색차 서브샘플링"); ss_lbl.setObjectName("advFieldLabel"); ss_lbl.setMinimumWidth(110)
+        ss_row.addWidget(ss_lbl)
+        self.ss_group = QButtonGroup(self); self.ss_group.setExclusive(True)
+        self.ss_rbs = {}
+        for code, label in self.SUBSAMPLING_LABELS:
+            rb = QRadioButton(label); rb.setObjectName("advRadio")
+            self.ss_group.addButton(rb, code)
+            self.ss_rbs[code] = rb
+            ss_row.addWidget(rb)
+        ss_row.addStretch(1)
+        cur_ss = cur.get("subsampling", 2)
+        self.ss_rbs.get(cur_ss, self.ss_rbs[2]).setChecked(True)
+        ss_w = QWidget(); ss_w.setLayout(ss_row)
+        root.addWidget(ss_w)
+
+        self.progressive_cb = QCheckBox("Progressive JPEG (점진적 로딩, 권장)")
+        self.progressive_cb.setObjectName("advCheck")
+        self.progressive_cb.setChecked(bool(cur.get("progressive", True)))
+        root.addWidget(self.progressive_cb)
+
+        # ── PNG ──────────────────────────────────────────────────────────────
+        root.addWidget(self._section_header("PNG"))
+        self.png_quant_cb = QCheckBox("팔레트 양자화 (파일 ↓, 색감 살짝 ↓)")
+        self.png_quant_cb.setObjectName("advCheck")
+        self.png_quant_cb.setChecked(bool(cur.get("png_quantize", True)))
+        root.addWidget(self.png_quant_cb)
+
+        self.png_colors = _LabeledSlider(16, 256, int(cur.get("png_colors", 256)))
+        root.addWidget(self._field_row("색상 수", self.png_colors))
+        self.png_quant_cb.toggled.connect(self.png_colors.setEnabled)
+        self.png_colors.setEnabled(self.png_quant_cb.isChecked())
+
+        self.oxipng = _LabeledSlider(0, 6, int(cur.get("oxipng_level", 4)))
+        root.addWidget(self._field_row("oxipng 최적화", self.oxipng, "(0=빠름, 6=강함)"))
+
+        # ── WebP ─────────────────────────────────────────────────────────────
+        root.addWidget(self._section_header("WebP"))
+        self.webp_q = _LabeledSlider(10, 100, cur.get("webp_quality", 72))
+        root.addWidget(self._field_row("품질", self.webp_q))
+        self.webp_method = _LabeledSlider(0, 6, int(cur.get("webp_method", 6)))
+        root.addWidget(self._field_row("method", self.webp_method, "(높을수록 압축↑·속도↓)"))
+
+        # ── 메타데이터 ───────────────────────────────────────────────────────
+        root.addWidget(self._section_header("메타데이터"))
+        exif_row = QHBoxLayout(); exif_row.setSpacing(8); exif_row.setContentsMargins(0, 0, 0, 0)
+        exif_lbl = QLabel("EXIF 정보"); exif_lbl.setObjectName("advFieldLabel"); exif_lbl.setMinimumWidth(110)
+        exif_row.addWidget(exif_lbl)
+        self.exif_strip = QRadioButton("모두 제거 (파일 ↓)"); self.exif_strip.setObjectName("advRadio")
+        self.exif_keep  = QRadioButton("보존 (촬영정보 유지)"); self.exif_keep.setObjectName("advRadio")
+        exif_grp = QButtonGroup(self); exif_grp.setExclusive(True)
+        exif_grp.addButton(self.exif_strip); exif_grp.addButton(self.exif_keep)
+        (self.exif_strip if cur.get("strip_exif", True) else self.exif_keep).setChecked(True)
+        exif_row.addWidget(self.exif_strip); exif_row.addWidget(self.exif_keep); exif_row.addStretch(1)
+        exif_w = QWidget(); exif_w.setLayout(exif_row)
+        root.addWidget(exif_w)
+
+        # ── 버튼 행 ──────────────────────────────────────────────────────────
+        root.addSpacing(6)
+        btn_row = QHBoxLayout(); btn_row.setSpacing(8); btn_row.setContentsMargins(0, 0, 0, 0)
+        reset_btn = QPushButton("기본값으로 되돌리기"); reset_btn.setObjectName("advReset")
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.clicked.connect(self._reset_to_defaults)
+        cancel_btn = QPushButton("취소"); cancel_btn.setObjectName("advCancel")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn = QPushButton("적용"); ok_btn.setObjectName("advOk")
+        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok_btn.clicked.connect(self.accept)
+        ok_btn.setDefault(True)
+        btn_row.addWidget(reset_btn); btn_row.addStretch(1)
+        btn_row.addWidget(cancel_btn); btn_row.addWidget(ok_btn)
+        btn_w = QWidget(); btn_w.setLayout(btn_row)
+        root.addWidget(btn_w)
+
+    # ── reset / collect ──────────────────────────────────────────────────────
+    def _reset_to_defaults(self):
+        d = self._defaults
+        self.rz_none.setChecked(True)
+        self.rz_pct_slider.setValue(50)
+        self.jpeg_q.setValue(int(d.get("jpeg_quality", 68)))
+        self.ss_rbs.get(int(d.get("subsampling", 2)), self.ss_rbs[2]).setChecked(True)
+        self.progressive_cb.setChecked(bool(d.get("progressive", True)))
+        self.png_quant_cb.setChecked(bool(d.get("png_quantize", True)))
+        self.png_colors.setValue(int(d.get("png_colors", 256)))
+        self.oxipng.setValue(int(d.get("oxipng_level", 4)))
+        self.webp_q.setValue(int(d.get("webp_quality", 72)))
+        self.webp_method.setValue(int(d.get("webp_method", 6)))
+        (self.exif_strip if d.get("strip_exif", True) else self.exif_keep).setChecked(True)
+
+    def get_values(self) -> dict:
+        """Return all current dialog values (caller diffs against defaults)."""
+        out = {
+            "jpeg_quality":  self.jpeg_q.value(),
+            "subsampling":   self.ss_group.checkedId() if self.ss_group.checkedId() >= 0 else 2,
+            "progressive":   self.progressive_cb.isChecked(),
+            "png_quantize":  self.png_quant_cb.isChecked(),
+            "png_colors":    self.png_colors.value(),
+            "oxipng_level":  self.oxipng.value(),
+            "webp_quality":  self.webp_q.value(),
+            "webp_method":   self.webp_method.value(),
+            "strip_exif":    self.exif_strip.isChecked(),
+            "resize_pct":    (self.rz_pct_slider.value() / 100.0) if self.rz_pct.isChecked() else None,
+        }
+        return out
+
+
 # ─── Compression worker ──────────────────────────────────────────────────────
 
 class CompressionWorker(QThread):
@@ -417,12 +662,16 @@ class CompressionWorker(QThread):
     allDone      = pyqtSignal(int, int, int)
 
     def __init__(self, entries, mode: str, output_format: str,
-                 max_dim: Optional[int], output_dir: str):
+                 max_dim: Optional[int], output_dir: str,
+                 resize_pct: Optional[float] = None,
+                 profile_overrides: Optional[dict] = None):
         super().__init__()
         self.entries = entries
         self.mode = mode
         self.output_format = output_format
         self.max_dim = max_dim
+        self.resize_pct = resize_pct
+        self.profile_overrides = profile_overrides
         self.output_dir = output_dir
 
     def _resolve_target_ext(self, src_path: str) -> str:
@@ -457,6 +706,8 @@ class CompressionWorker(QThread):
                     mode=self.mode,
                     output_format=self.output_format,
                     max_dim=self.max_dim,
+                    resize_pct=self.resize_pct,
+                    profile_overrides=self.profile_overrides,
                     progress_callback=_cb,
                 )
                 tot_orig += in_sz
@@ -489,6 +740,7 @@ class MainWindow(QMainWindow):
         self.output_format = "jpeg"
         self.max_dim_enabled = False
         self.max_dim_value = 1920
+        self._advanced_values: Optional[dict] = None  # None = preset 그대로
         self.is_compressing = False
         self._worker: Optional[CompressionWorker] = None
         self._drag_pos: Optional[QPoint] = None
@@ -753,8 +1005,52 @@ class MainWindow(QMainWindow):
         row.addWidget(suffix)
 
         row.addStretch(1)
+
+        # ── 고급 설정 버튼 ───────────────────────────────────────────────
+        self.adv_btn = QPushButton("⚙ 고급 설정")
+        self.adv_btn.setObjectName("advBtn")
+        self.adv_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.adv_btn.clicked.connect(self._open_advanced)
+        row.addWidget(self.adv_btn)
+
         w = QWidget(); w.setLayout(row)
         return w
+
+    # ── Advanced dialog ──────────────────────────────────────────────────────
+
+    def _current_defaults(self) -> dict:
+        """Default profile values for the currently-selected quality preset."""
+        d = dict(PROFILES.get(self.current_mode, PROFILES["recommended"]))
+        d["resize_pct"] = None
+        return d
+
+    def _open_advanced(self):
+        if self.is_compressing:
+            return
+        defaults = self._current_defaults()
+        current = dict(defaults)
+        if self._advanced_values:
+            current.update(self._advanced_values)
+        dlg = AdvancedDialog(defaults, current, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            values = dlg.get_values()
+            # Diff against current preset; keep only what's been changed
+            d = self._current_defaults()
+            diff = {}
+            for k, v in values.items():
+                if v is None and d.get(k) is None:
+                    continue
+                if v != d.get(k):
+                    diff[k] = v
+            self._advanced_values = diff if diff else None
+            self._update_advanced_btn()
+
+    def _update_advanced_btn(self):
+        modified = bool(self._advanced_values)
+        self.adv_btn.setText("⚙ 고급 설정 (수정됨)" if modified else "⚙ 고급 설정")
+        self.adv_btn.setProperty("modified", "true" if modified else "false")
+        self.adv_btn.style().unpolish(self.adv_btn)
+        self.adv_btn.style().polish(self.adv_btn)
 
     def _set_format(self, fid: str):
         self.output_format = fid
@@ -1036,6 +1332,16 @@ class MainWindow(QMainWindow):
         self.current_mode = qid
         for k, card in self._q_cards.items():
             card.setActive(k == qid)
+        # Switching presets re-evaluates whether the user's overrides
+        # still differ from the new preset's defaults
+        if hasattr(self, "adv_btn") and self._advanced_values:
+            d = self._current_defaults()
+            self._advanced_values = {
+                k: v for k, v in self._advanced_values.items() if v != d.get(k)
+            }
+            if not self._advanced_values:
+                self._advanced_values = None
+            self._update_advanced_btn()
 
     # ── Compression lifecycle ────────────────────────────────────────────────
 
@@ -1077,12 +1383,23 @@ class MainWindow(QMainWindow):
         self.pulse_dot.start()
 
         entries = [(f["row"], f["path"]) for f in self.files]
+
+        # Split advanced values into resize_pct (separate arg) + profile overrides
+        adv = dict(self._advanced_values) if self._advanced_values else {}
+        resize_pct = adv.pop("resize_pct", None)
+        # Main-panel max_dim takes precedence over dialog's resize_pct
+        if self._resolve_max_dim() is not None:
+            resize_pct = None
+        profile_overrides = adv or None
+
         self._worker = CompressionWorker(
             entries,
             mode=self.current_mode,
             output_format=self.output_format,
             max_dim=self._resolve_max_dim(),
             output_dir=self.output_dir,
+            resize_pct=resize_pct,
+            profile_overrides=profile_overrides,
         )
         self._worker.fileStarted.connect(self._on_file_started)
         self._worker.fileProgress.connect(self._on_file_progress)

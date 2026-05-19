@@ -49,13 +49,10 @@ PROFILES = {
         "png_colors":      128,
         "subsampling":     2,
         "strip_exif":      True,
+        "progressive":     True,
         "oxipng_level":    6,
         # ── HEIC/HEIF special handling ────────────────────────────
-        # HEIC uses HEVC (2× more efficient than JPEG). Re-encoding as
-        # JPEG at the same visual quality barely saves space. Apply an
-        # auto resize + lower quality so the output is meaningfully
-        # smaller without user having to toggle the resize checkbox.
-        "heic_max_dim":        1920,   # resize any HEIC down to max 1920px
+        "heic_max_dim":        1920,
         "heic_jpeg_quality":   40,
         "heic_webp_quality":   35,
     },
@@ -68,8 +65,8 @@ PROFILES = {
         "png_colors":      256,
         "subsampling":     2,
         "strip_exif":      True,
+        "progressive":     True,
         "oxipng_level":    4,
-        # HEIC: resize to 2560px + lower JPEG quality
         "heic_max_dim":        2560,
         "heic_jpeg_quality":   58,
         "heic_webp_quality":   65,
@@ -83,13 +80,20 @@ PROFILES = {
         "png_colors":      256,
         "subsampling":     0,
         "strip_exif":      False,
+        "progressive":     True,
         "oxipng_level":    2,
-        # HEIC low: no forced resize (화질 우선), but slightly lower quality
         "heic_max_dim":        None,
         "heic_jpeg_quality":   72,
         "heic_webp_quality":   78,
     },
 }
+
+# Keys safe to apply via profile_overrides (validated in compress_image)
+_OVERRIDABLE_KEYS = (
+    "jpeg_quality", "webp_quality", "webp_method", "png_compress",
+    "png_quantize", "png_colors", "subsampling", "strip_exif",
+    "progressive", "oxipng_level",
+)
 
 # Extension → internal format name
 _FMT_MAP = {
@@ -115,14 +119,26 @@ def compress_image(
     mode: str = "recommended",
     output_format: str = "jpeg",
     max_dim: int = None,
+    resize_pct: float = None,
+    profile_overrides: dict = None,
     progress_callback=None,
 ) -> tuple:
     """Compress a single image file.
 
+    Args:
+        max_dim: limit the longest side to this many pixels.
+        resize_pct: alternative to max_dim — scale by a ratio in (0, 1).
+        profile_overrides: dict of keys in ``_OVERRIDABLE_KEYS`` that override
+            the per-mode defaults (e.g. {"jpeg_quality": 75}).
+
     Returns (input_size_bytes, output_size_bytes, was_skipped).
     was_skipped=True  → compressed file was not smaller; original was copied.
     """
-    profile = PROFILES.get(mode, PROFILES["recommended"])
+    profile = dict(PROFILES.get(mode, PROFILES["recommended"]))
+    if profile_overrides:
+        for k, v in profile_overrides.items():
+            if k in _OVERRIDABLE_KEYS and v is not None:
+                profile[k] = v
     in_size = os.path.getsize(input_path)
 
     ext = os.path.splitext(input_path)[1].lower()
@@ -142,16 +158,17 @@ def compress_image(
     # Re-encoding as JPEG at the general quality setting barely reduces size.
     # Apply dedicated lower quality + auto-resize for HEIC sources.
     if src_fmt == "heic":
-        profile = dict(profile)  # shallow copy — don't mutate the global
         heic_max = profile.get("heic_max_dim")
-        if target_fmt == "jpeg":
-            profile["jpeg_quality"] = profile.get("heic_jpeg_quality",
-                                                   profile["jpeg_quality"])
-        elif target_fmt == "webp":
-            profile["webp_quality"] = profile.get("heic_webp_quality",
-                                                   profile["webp_quality"])
-        # Auto-resize: only if user hasn't already set a tighter limit
-        if heic_max and (not max_dim or max_dim > heic_max):
+        if not profile_overrides or "jpeg_quality" not in profile_overrides:
+            if target_fmt == "jpeg":
+                profile["jpeg_quality"] = profile.get("heic_jpeg_quality",
+                                                       profile["jpeg_quality"])
+        if not profile_overrides or "webp_quality" not in profile_overrides:
+            if target_fmt == "webp":
+                profile["webp_quality"] = profile.get("heic_webp_quality",
+                                                       profile["webp_quality"])
+        # Auto-resize: only when user hasn't specified any resize themselves
+        if heic_max and not max_dim and not resize_pct:
             max_dim = heic_max
 
     # ── Load ──────────────────────────────────────────────────────────────
@@ -161,8 +178,8 @@ def compress_image(
     img = ImageOps.exif_transpose(img)
 
     # ── Resize (optional) ─────────────────────────────────────────────────
-    if max_dim:
-        img = _apply_resize(img, max_dim)
+    if max_dim or resize_pct:
+        img = _apply_resize(img, max_dim, resize_pct)
 
     # ── Auto-grayscale detection ──────────────────────────────────────────
     # If the image is colour but actually all grey values, shrink to L mode.
@@ -202,9 +219,17 @@ def _load_image(path: str):
     return img, exif_bytes
 
 
-def _apply_resize(img: Image.Image, max_dim: int) -> Image.Image:
-    """Resize so neither dimension exceeds max_dim (preserves aspect ratio)."""
-    if max(img.width, img.height) > max_dim:
+def _apply_resize(img: Image.Image, max_dim, resize_pct) -> Image.Image:
+    """Resize the image.
+
+    ``resize_pct`` (0 < x < 1) scales by ratio; ``max_dim`` caps the longest
+    side. If both are set, ``resize_pct`` takes precedence.
+    """
+    if resize_pct and 0 < resize_pct < 1:
+        new_w = max(1, int(round(img.width * resize_pct)))
+        new_h = max(1, int(round(img.height * resize_pct)))
+        return img.resize((new_w, new_h), Image.LANCZOS)
+    if max_dim and max(img.width, img.height) > max_dim:
         img.thumbnail((max_dim, max_dim), Image.LANCZOS)
     return img
 
@@ -291,7 +316,7 @@ def _save_image(
             format="JPEG",
             quality=profile["jpeg_quality"],
             optimize=True,
-            progressive=True,
+            progressive=profile.get("progressive", True),
             subsampling=profile["subsampling"],
         )
         if exif_bytes:

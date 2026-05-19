@@ -35,7 +35,7 @@ SUCCESS_DK   = "#1f5237"
 SUCCESS_MID  = "#3d6b51"
 SUCCESS_BRD  = "#d5ead9"
 
-APP_VERSION  = "v2.0.0"
+APP_VERSION  = "v2.1.0"
 FONT_SANS    = "Pretendard, Malgun Gothic, \"맑은 고딕\", Segoe UI"
 FONT_MONO    = "Consolas, \"Courier New\", monospace"
 
@@ -595,5 +595,184 @@ QToolTip {{
     border: 0;
     padding: 4px 8px;
     border-radius: 4px;
+}}
+
+/* ── advanced settings button (in main format panel) ── */
+QPushButton#advBtn {{
+    background: white;
+    color: {INK_700};
+    border: 1px solid {INK_200};
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#advBtn:hover {{
+    background: {BG_SUBTLE};
+    color: {INK_900};
+    border: 1px solid {INK_300};
+}}
+QPushButton#advBtn[modified="true"] {{
+    background: {ACCENT_TINT};
+    color: {ACCENT_DK};
+    border: 1px solid {ACCENT};
+}}
+
+/* ── advanced dialog ── */
+QDialog#advDialog {{
+    background: {BG_WINDOW};
+}}
+#advTitle {{
+    color: {INK_900};
+    font-size: 14px;
+    font-weight: 700;
+}}
+#advSubtitle {{
+    color: {INK_500};
+    font-size: 11px;
+}}
+#advSectionHead {{
+    color: {ACCENT_DK};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    padding-right: 8px;
+}}
+#advSectionLine {{
+    background: {INK_100};
+    max-height: 1px;
+    min-height: 1px;
+}}
+#advFieldLabel {{
+    color: {INK_700};
+    font-size: 11px;
+}}
+#advFieldHint {{
+    color: {INK_400};
+    font-size: 10px;
+}}
+#advSliderValue {{
+    color: {INK_900};
+    font-family: {FONT_MONO};
+    font-size: 11px;
+    font-weight: 700;
+}}
+QSlider#advSlider::groove:horizontal {{
+    height: 4px;
+    background: {INK_100};
+    border-radius: 2px;
+}}
+QSlider#advSlider::sub-page:horizontal {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                 stop:0 {ACCENT}, stop:1 #ff7b5f);
+    border-radius: 2px;
+}}
+QSlider#advSlider::handle:horizontal {{
+    background: white;
+    border: 2px solid {ACCENT};
+    width: 12px;
+    height: 12px;
+    margin: -5px 0;
+    border-radius: 8px;
+}}
+QSlider#advSlider::handle:horizontal:hover {{
+    background: {ACCENT_TINT};
+}}
+QSlider#advSlider:disabled::sub-page:horizontal {{
+    background: {INK_300};
+}}
+QSlider#advSlider:disabled::handle:horizontal {{
+    border: 2px solid {INK_300};
+}}
+QRadioButton#advRadio {{
+    color: {INK_700};
+    font-size: 11px;
+    spacing: 6px;
+}}
+QRadioButton#advRadio::indicator {{
+    width: 13px;
+    height: 13px;
+    border: 1px solid {INK_300};
+    border-radius: 8px;
+    background: white;
+}}
+QRadioButton#advRadio::indicator:checked {{
+    background: {ACCENT};
+    border: 3px solid white;
+    outline: 1px solid {ACCENT};
+}}
+QCheckBox#advCheck {{
+    color: {INK_700};
+    font-size: 11px;
+    spacing: 6px;
+}}
+QCheckBox#advCheck::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {INK_300};
+    border-radius: 3px;
+    background: white;
+}}
+QCheckBox#advCheck::indicator:checked {{
+    background: {ACCENT};
+    border: 1px solid {ACCENT};
+    image: none;
+}}
+QPushButton#advOk {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                 stop:0 {ACCENT_HOVER}, stop:1 {ACCENT});
+    color: white;
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 18px;
+    font-size: 11px;
+    font-weight: 700;
+}}
+QPushButton#advOk:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                 stop:0 #ef6551, stop:1 {ACCENT});
+}}
+QPushButton#advOk:pressed {{
+    background: {ACCENT_DK};
+}}
+QPushButton#advCancel {{
+    background: white;
+    color: {INK_700};
+    border: 1px solid {INK_200};
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 11px;
+}}
+QPushButton#advCancel:hover {{
+    background: {BG_SUBTLE};
+    border: 1px solid {INK_300};
+}}
+QPushButton#advReset {{
+    background: transparent;
+    color: {INK_500};
+    border: 0;
+    padding: 8px 4px;
+    font-size: 11px;
+}}
+QPushButton#advReset:hover {{
+    color: {ACCENT_DK};
+}}
+
+#advResizeInput {{
+    background: white;
+    border: 1px solid {INK_200};
+    border-radius: 4px;
+    padding: 3px 6px;
+    color: {INK_900};
+    font-family: {FONT_MONO};
+    font-size: 11px;
+    max-width: 70px;
+}}
+#advResizeInput:focus {{
+    border: 1px solid {ACCENT};
+}}
+#advResizeInput:disabled {{
+    background: {BG_SUBTLE};
+    color: {INK_400};
 }}
 """
