@@ -176,6 +176,9 @@ def compress_image(
 
     # Bake EXIF orientation into pixels so we can safely strip metadata
     img = ImageOps.exif_transpose(img)
+    # 회전을 픽셀에 반영했으니, EXIF를 남기는 모드에서는 회전 태그를 "정방향"으로
+    # 바꿔야 한다. 안 그러면 뷰어가 한 번 더 돌려서 사진이 옆으로 누워 보인다.
+    exif_bytes = _reset_orientation(exif_bytes)
 
     # ── Resize (optional) ─────────────────────────────────────────────────
     if max_dim or resize_pct:
@@ -199,8 +202,11 @@ def compress_image(
         progress_callback(1, 1)
 
     # ── Skip if compression made things larger ────────────────────────────
+    # 같은 형식일 때만 원본으로 되돌린다. 형식을 바꾼 경우(HEIC→JPG, PNG→WebP 등)에
+    # 원본을 복사하면 "사진.jpg" 안에 HEIC 데이터가 들어가 열리지 않는 파일이 된다.
+    # 형식 변환은 사용자가 원한 결과이므로 커졌더라도 변환본을 남긴다.
     out_size = os.path.getsize(output_path)
-    if out_size >= in_size:
+    if out_size >= in_size and target_fmt == src_fmt:
         shutil.copy2(input_path, output_path)
         return in_size, in_size, True
 
@@ -217,6 +223,21 @@ def _load_image(path: str):
     img.load()
     exif_bytes = img.info.get("exif", b"")
     return img, exif_bytes
+
+
+def _reset_orientation(exif_bytes: bytes) -> bytes:
+    """Return EXIF bytes with the Orientation tag set to 1 (upright)."""
+    if not exif_bytes:
+        return exif_bytes
+    try:
+        exif = Image.Exif()
+        exif.load(exif_bytes)
+        if exif.get(0x0112, 1) == 1:
+            return exif_bytes
+        exif[0x0112] = 1
+        return exif.tobytes()
+    except Exception:
+        return b""  # 손상된 EXIF는 차라리 버린다 (회전 오류보다 낫다)
 
 
 def _apply_resize(img: Image.Image, max_dim, resize_pct) -> Image.Image:
@@ -294,8 +315,8 @@ def _has_real_alpha(img: Image.Image) -> bool:
     if img.mode not in ("RGBA", "LA"):
         return False
     try:
-        alpha = img.split()[-1]
-        return min(alpha.getdata()) < 255
+        # getextrema() 는 C 레벨에서 한 번에 계산 — 픽셀을 파이썬 리스트로 도는 것보다 훨씬 빠름
+        return img.split()[-1].getextrema()[0] < 255
     except Exception:
         return True
 
